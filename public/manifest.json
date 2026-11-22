@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "minimum_chrome_version": "120",
-  "name": "书签寻迹 · AI 书签搜索",
-  "description": "用标题、文件夹或自然语言找回收藏的页面。",
+  "name": "书签寻迹 · 书签搜索与 AI 对话",
+  "description": "按标题、网址和文件夹即时搜索 Chrome 书签。连接自己的 AI 模型后，可以按页面用途和自然语言找回收藏。",
   "version": "0.1.0",
   "permissions": ["bookmarks", "storage", "alarms"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
