@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>书签寻迹 · 索引管理</title><link rel="stylesheet" href="style.css"></head>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>AI书签寻迹 · 索引管理</title><link rel="stylesheet" href="style.css"></head>
 <body class="manager"><header><h1><img src="icons/48.png" width="28" height="28" alt=""> 书签索引</h1><button id="sync">同步书签</button></header><p class="small">同步会重新读取此 Chrome 配置的书签，将新增、改名、移动和删除反映到本地搜索，无需调用模型。</p><p id="syncResult" role="status"></p><p id="notice" role="status"></p>
 <p id="lastChange" class="small"></p><p>输入即可在本地搜索书签。配置模型后，新收藏的书签以及更改标题、网址的书签会自动生成用途索引。删除书签时自动清理关联。历史书签按下方勾选范围手动建库；明确排除的目录也会跳过自动建库。</p>
 <section><h2>LLM 建库进度</h2><p id="stats"></p><p id="recent"></p><p id="current" aria-live="polite"></p><p id="size"></p><div class="actions"><button class="primary" id="start">开始建库</button><button id="clearAll">清理全部 LLM 索引</button></div></section>
