@@ -1,0 +1,12 @@
+{
+  "name": "ai-chrome-bookmarks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "test": "npm run build && node test/relevance.mjs && node test/smoke.mjs"
+  },
+  "dependencies": {"htmlparser2": "^10.0.0"},
+  "devDependencies": {"@types/chrome": "^0.1.0", "esbuild": "^0.25.0", "playwright": "1.60.0", "typescript": "^5.8.0"}
+}

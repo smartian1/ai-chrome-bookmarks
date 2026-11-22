@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "120",
+  "name": "书签寻迹 · AI 书签搜索",
+  "description": "用标题、文件夹或自然语言找回收藏的页面。",
+  "version": "0.1.0",
+  "permissions": ["bookmarks", "storage", "alarms"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "background": {"service_worker":"worker.js","type":"module"},
+  "icons":{"16":"icons/16.png","32":"icons/32.png","48":"icons/48.png","128":"icons/128.png"},
+  "action": {"default_popup":"search.html","default_title":"搜索书签","default_icon":{"16":"icons/16.png","32":"icons/32.png","48":"icons/48.png","128":"icons/128.png"}},
+  "options_page": "settings.html",
+  "commands": {"_execute_action":{"suggested_key":{"default":"Alt+Shift+B"},"description":"打开书签搜索"}}
+}
