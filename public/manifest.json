@@ -1,14 +1,24 @@
 {
   "manifest_version": 3,
   "minimum_chrome_version": "120",
-  "name": "AI书签寻迹",
-  "description": "Chrome 书签搜索工具，支持按标题、网址和文件夹即时查找。连接自己的 AI 模型后，可以按页面用途和自然语言找回收藏。",
-  "version": "0.1.0",
+  "default_locale": "en",
+  "name": "__MSG_extName__",
+  "description": "__MSG_extDescription__",
+  "version": "0.1.1",
   "permissions": ["bookmarks", "storage", "alarms"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
-  "background": {"service_worker":"worker.js","type":"module"},
-  "icons":{"16":"icons/16.png","32":"icons/32.png","48":"icons/48.png","128":"icons/128.png"},
-  "action": {"default_popup":"search.html","default_title":"搜索书签","default_icon":{"16":"icons/16.png","32":"icons/32.png","48":"icons/48.png","128":"icons/128.png"}},
+  "background": {"service_worker": "worker.js", "type": "module"},
+  "icons": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png"},
+  "action": {
+    "default_popup": "search.html",
+    "default_title": "__MSG_actionTitle__",
+    "default_icon": {"16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png"}
+  },
   "options_page": "settings.html",
-  "commands": {"_execute_action":{"suggested_key":{"default":"Alt+Shift+B"},"description":"打开书签搜索"}}
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {"default": "Alt+Shift+B"},
+      "description": "__MSG_commandOpen__"
+    }
+  }
 }

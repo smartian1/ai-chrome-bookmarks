@@ -1,5 +1,6 @@
 import {flatten,foldersOf,included,retryable,type Folder,type Rules,type Info,type Row} from './core';
 import {all,change,config,rows,type AutoJob} from './db';
+import {isZh,listSeparator,t} from './i18n';
 import {ask,describeBatch} from './model';
 let syncTail=Promise.resolve(), revision=0;
 let folders:Folder[]=[], generation=0;
@@ -11,7 +12,7 @@ function sync() {
   syncTail=syncTail.catch(()=>{}).then(()=>locked(async()=>{
     if(version!==revision)return;
     const tree=await chrome.bookmarks.getTree(), marks=flatten(tree);
-    folders=foldersOf(tree);
+    folders=foldersOf(tree,[],'',t('allFolders'));
     const ids=new Set(marks.map(m=>m.id));
     const [old,info,notes]=await Promise.all([all('marks'),all('info'),all('notes')]);
     const previous=new Map(old.map(m=>[m.id,m]));
@@ -154,11 +155,11 @@ async function batch() {
     if(tasks.length){
       if(epoch!==generation)return;
       const marks=tasks.map(task=>task.mark);
-      current={id:marks.map(m=>m.id).join(','),title:marks.map(m=>m.title).join('、'),url:marks.length===1?marks[0].safe:'',ancestors:[...new Set(marks.flatMap(m=>m.ancestors))],count:marks.length};
+      current={id:marks.map(m=>m.id).join(','),title:marks.map(m=>m.title).join(listSeparator()),url:marks.length===1?marks[0].safe:'',ancestors:[...new Set(marks.flatMap(m=>m.ancestors))],count:marks.length};
       await chrome.storage.local.set({used:c.used+1});
       let results:Map<string,Info|Error>;
       try{results=await describeBatch(c,marks);}
-      catch(error){results=new Map(marks.map(m=>[m.key,error instanceof Error?error:Error('请求失败')]));}
+      catch(error){results=new Map(marks.map(m=>[m.key,error instanceof Error?error:Error(t('errRequestFailed'))]));}
       const outcomes=tasks.map(task=>{
         const result=results.get(task.key)!;
         if(result instanceof Error){
@@ -189,7 +190,7 @@ async function handle(message:{type:string;id?:string;text?:string;query?:string
     case 'folders':if(!folders.length)await sync();return folders;
     case 'scope':return locked(async()=>{
       const folder=folders.find(f=>f.id===message.id);
-      if(!folder||typeof message.enabled!=='boolean')throw Error('目录已变更，请刷新');
+      if(!folder||typeof message.enabled!=='boolean')throw Error(t('errFolderChanged'));
       const {rules}=await config();
       for(const child of folders)if(child.ancestors.includes(folder.id))delete rules[child.id];
       rules[folder.id]=message.enabled;
@@ -198,7 +199,7 @@ async function handle(message:{type:string;id?:string;text?:string;query?:string
     case 'clearFolder':
     case 'clearAll':return locked(async()=>{
       const whole=message.type==='clearAll';
-      if(!whole&&!folders.some(f=>f.id===message.id))throw Error('目录已变更，请刷新');
+      if(!whole&&!folders.some(f=>f.id===message.id))throw Error(t('errFolderChanged'));
       generation++;await chrome.storage.local.set({running:false});
       const [marks,links,info]=await Promise.all([all('marks'),all('links'),all('info')]);
       const targets=new Set(marks.filter(m=>whole||m.ancestors.includes(message.id!)).map(m=>m.id));
@@ -211,18 +212,21 @@ async function handle(message:{type:string;id?:string;text?:string;query?:string
     });
     case 'start':{
       const c=await config();
-      if(!c.base||!c.model)throw Error('请先设置模型地址和模型名');
+      if(!c.base||!c.model)throw Error(t('errConfigRequired'));
       if(c.running)return true;
       await chrome.storage.local.set({running:true,startedAt:Date.now()});
       await chrome.alarms.create('index',{periodInMinutes:1});void runBatch();return true;
     }
     case 'pause':await chrome.storage.local.set({running:false});return true;
     case 'note':await change(['notes'],tx=>tx.objectStore('notes').put({id:message.id,text:(message.text??'').slice(0,1000)}));return true;
-    case 'test':await ask(await config(),'输出 {"ok":true}',{test:true});return true;
+    case 'test':await ask(await config(),isZh()?'输出 {"ok":true}':'Output {"ok":true}',{test:true});return true;
     case 'query':{
       const q=(message.query??'').slice(0,600);
-      const value=await ask(await config(),'提取与搜索意图直接相关的短语。输出 {"terms":["检索短语"],"concepts":[["必须出现的核心主题","同义词或译名"]],"folder":""}。每组列举同一概念的可互换表达，各组均须匹配，请只列必要概念，不确定就少列。不要用相关平台、工具或背景词代替专名。对于“yum安装和卸载程序”，可用 [["yum","yellowdog updater modified"],["安装","卸载","install","remove","erase","uninstall"]]，不要用 Linux 或 CentOS 代替 yum。时间及文件夹不放入概念。明确指定文件夹时提取名称。',{query:q});
-      if(!Array.isArray(value?.terms))throw Error('模型未返回检索词');
+      const instruction=isZh()
+        ?'提取与搜索意图直接相关的短语。输出 {"terms":["检索短语"],"concepts":[["必须出现的核心主题","同义词或译名"]],"folder":""}。每组列举同一概念的可互换表达，各组均须匹配，请只列必要概念，不确定就少列。不要用相关平台、工具或背景词代替专名。对于“yum安装和卸载程序”，可用 [["yum","yellowdog updater modified"],["安装","卸载","install","remove","erase","uninstall"]]，不要用 Linux 或 CentOS 代替 yum。时间及文件夹不放入概念。明确指定文件夹时提取名称。'
+        :'Extract phrases directly relevant to the search intent. Output {"terms":["search phrase"],"concepts":[["core topic that must appear","synonym or translation"]],"folder":""}. Each concept group lists interchangeable ways to express the same concept; every group must match, so include only essential concepts and omit uncertain ones. Do not substitute broader platforms, tools, or background words for specific names. For "install and uninstall software with yum", use [["yum","yellowdog updater modified"],["install","uninstall","remove","erase","安装","卸载"]], and do not replace yum with Linux or CentOS. Do not put time ranges or folder names in concepts. Extract folder only when the user explicitly names one.';
+      const value=await ask(await config(),instruction,{query:q});
+      if(!Array.isArray(value?.terms))throw Error(t('errNoSearchTerms'));
       const concepts:string[][]=[];
       if(Array.isArray(value.concepts))for(const group of value.concepts.slice(0,5)){
         if(!Array.isArray(group))continue;
@@ -231,10 +235,10 @@ async function handle(message:{type:string;id?:string;text?:string;query?:string
       }
       return {terms:value.terms.filter((s:unknown)=>typeof s==='string').slice(0,12),concepts,folder:typeof value.folder==='string'?value.folder:''};
     }
-    default:throw Error('未知操作');
+    default:throw Error(t('errUnknownAction'));
   }
 }
 chrome.runtime.onMessage.addListener((msg,sender,reply)=>{
   if(sender.id!==chrome.runtime.id)return;
-  handle(msg).then(value=>reply({value}),e=>reply({error:e instanceof Error?e.message:'请求失败'}));return true;
+  handle(msg).then(value=>reply({value}),e=>reply({error:e instanceof Error?e.message:t('errRequestFailed')}));return true;
 });

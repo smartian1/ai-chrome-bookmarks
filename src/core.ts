@@ -11,11 +11,11 @@ export function retryable(info:Info,startedAt:number){
   return info.status!=='done'&&info.at<startedAt;
 }
 export type Folder={id:string;title:string;ancestors:string[];path:string};
-export function foldersOf(nodes:chrome.bookmarks.BookmarkTreeNode[],ancestors:string[]=[],path=''):Folder[]{
+export function foldersOf(nodes:chrome.bookmarks.BookmarkTreeNode[],ancestors:string[]=[],path='',rootTitle='All folders'):Folder[]{
   return nodes.flatMap(node=>{
     if(node.url)return [];
     const parents=[...ancestors,node.id], name=[path,node.title].filter(Boolean).join(' / ');
-    return [{id:node.id,title:node.title||'全部文件夹',ancestors:parents,path:name},...foldersOf(node.children??[],parents,name)];
+    return [{id:node.id,title:node.title||rootTitle,ancestors:parents,path:name},...foldersOf(node.children??[],parents,name,rootTitle)];
   });
 }
 
@@ -44,7 +44,8 @@ export function flatten(nodes:chrome.bookmarks.BookmarkTreeNode[], folder='',anc
   });
 }
 export function monthRange(query:string, now=new Date()) {
-  const offset=query.includes('上个月')||query.includes('上月')?-1:query.includes('本月')||query.includes('这个月')?0:null;
+  const q=query.toLowerCase();
+  const offset=q.includes('上个月')||q.includes('上月')||/\b(?:last|previous)\s+month\b/.test(q)?-1:q.includes('本月')||q.includes('这个月')||/\bthis\s+month\b/.test(q)?0:null;
   return offset===null ? undefined : [new Date(now.getFullYear(),now.getMonth()+offset,1).getTime(),new Date(now.getFullYear(),now.getMonth()+offset+1,1).getTime()];
 }
 function tokens(text:string) {
@@ -81,6 +82,6 @@ export function search(rows:Row[], query:string, extra:string[]=[], folder='', c
         for(const group of concepts) if(group.some(term=>wordMatch(value,term))) score+=weight;
       }
       return {r,score};
-    }).filter(x=>!q || x.score>0 || (range && /^(?:上个月|上月|本月|这个月)(?:收藏的?)?$/.test(q)))
+    }).filter(x=>!q || x.score>0 || (range && (/^(?:上个月|上月|本月|这个月)(?:收藏的?)?$/.test(q) || /^(?:(?:bookmarks?|saved|added)\s+(?:from|in)\s+)?(?:last|previous|this)\s+month$/.test(q))))
     .sort((a,b)=>b.score-a.score || b.r.date-a.r.date).slice(0,50).map(x=>x.r);
 }

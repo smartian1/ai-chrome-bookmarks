@@ -1,38 +1,54 @@
-# AI书签寻迹
+# AI Bookmark Trails
 
-Chrome Manifest V3 扩展。安装后即可按标题、网址或文件夹搜索当前配置的书签；配置兼容 Chat Completions 的网关后，可以后台生成用途说明和中英文检索词，再用自然语言查找。
+English | [简体中文](README.zh-CN.md)
 
-## 安装
+Find Chrome bookmarks by what they do, not just the title you forgot.
 
-1. 开发环境使用 Node.js 22，运行 `npm ci`、`npm run build`。
-2. 打开 `chrome://extensions`，开启「开发者模式」，选择「加载已解压的扩展程序」，选中项目下的 `dist` 目录。如果已经有构建好的 `dist`，直接执行此步。
-3. 点击扩展图标或按 `Alt+Shift+B`。如果快捷键被占用，可在 `chrome://extensions/shortcuts` 修改。输入时立即显示本地结果；回车提交智能查询，用方向键选中后回车打开。
+A Chrome Manifest V3 extension that lets you search bookmarks locally by title, URL, or folder right after installation—no AI required. When you connect your own OpenAI-compatible Chat Completions gateway, it builds concise purpose summaries and bilingual search keywords in the background so you can search in natural language.
 
-## 建立用途索引
+- **Chrome Web Store**: [AI Bookmark Trails / AI书签寻迹](https://chromewebstore.google.com/detail/ai%E4%B9%A6%E7%AD%BE%E5%AF%BB%E8%BF%B9/giaaehbmdoejmppnbbflfmggnkohhagn)
+- **Primary Repository**: [GitHub](https://github.com/smartian1/ai-chrome-bookmarks) ([Issues & Feedback](https://github.com/smartian1/ai-chrome-bookmarks/issues)) · Gitee mirror available
+- **Privacy Policy**: [PRIVACY.md](PRIVACY.md)
 
-日常新增和改名、换网址会把对应书签加入持久队列，配置好网关后自动处理；已明确排除的目录沿用排除规则。删除书签或目录会清理对应任务和索引关联，其他书签共用的说明可以继续使用。移动书签或重命名目录仅更新路径。安装、同步和 Chrome 批量导入时的已有书签由用户在管理页选择后手动处理。
+## Features
 
-- 本地即时搜索随安装启用，无需 LLM。使用智能查询或生成用途索引时，在「管理索引」填写网关 Base URL（含 `/v1`）、模型名和可选 API 密钥，保存并测试连接。
-- 新安装默认不勾选目录。升级时保留手动选择；其余目录按已有成功索引初始化。树初次显示前两级实际书签目录，勾选父目录会包含子目录。页面显示选中的书签数。点击「开始建库」处理选中的目录，同一按钮可暂停。每次重新开始时自动重试上轮失败和待补全的页面，成功完成的索引可复用。
-- 管理页显示当前处理的页面、各目录成功数及可处理数，以及 LLM 记录和书签关联的 UTF-8 序列化大小估算。清理目录或清理全部会暂停建库，保留本地书签、基础搜索和个人备注。跨目录共享索引只解除目标目录的关联；重新开始会复用仍在的共享数据。
-- 点击「开始建库」时会申请 HTTP 和 HTTPS 站点访问权限，授权后未来新增的域名也可自动读取。程序在建库范围内按需请求书签地址，不携带登录凭据，不执行页面脚本，不跟随重定向。读取失败或站点权限不足时使用标题和网址推断。
-- 在「已生成的 LLM 索引」按生成时间浏览用途、关键词、来源和摘录，可按标题、网址、用途或关键词筛选。旧索引直接显示，升级不会重新调用模型。用户备注优先参与搜索。模型请求失败时会记录本批失败项，继续处理其余书签。再次开始可重试失败项。
+- **Instant local search**: Press `Alt+Shift+B` (customizable at `chrome://extensions/shortcuts`) or click the extension icon to search titles, URLs, folders, and personal notes immediately.
+- **Bilingual UI & summaries**: Supports English and Simplified Chinese automatically based on Chrome's UI language. Newly generated AI summaries follow the active UI language while preserving bilingual retrieval terms.
+- **Natural-language AI Search**: Press `Enter` or `Ctrl+Enter` to expand your query into concepts and synonyms via your configured model, then rank matching bookmarks locally. Supports explicit folder names and relative time filters (`this month`, `last month`, `本月`, `上个月`).
+- **Controlled background indexing**:
+  - Newly added bookmarks and bookmarks with changed titles or URLs are queued automatically once a gateway is configured (explicitly excluded folders are skipped).
+  - Existing bookmarks are indexed only for folders you select in **Manage Index**, with pause/resume, automatic retry for failed items, and reuse of existing summaries.
+  - Personal notes are searchable immediately and prioritized in ranking.
 
-[阅读隐私政策](PRIVACY.md)
+## Install from Source
 
-## 数据范围
+1. Use Node.js 22 and run:
+   ```bash
+   npm ci
+   npm run build
+   ```
+2. Open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the `dist` directory.
+3. Click the extension icon or press `Alt+Shift+B`. Type for instant local search; press `Enter` (or `Ctrl+Enter` when an item is highlighted) for AI Search, and use arrow keys + `Enter` to open the selected bookmark.
 
-每个 Chrome 配置独立运行。本地书签树由 Chrome API 读取，扩展没有修改书签的操作。书签变更会更新本地索引，并保留按书签 ID 记录的备注。模型根据用户提交的问题扩展检索词，结果由本地索引排序。支持明确文件夹名称及“上个月 / 本月”时间筛选。
+## Building an AI Index
 
-建库请求可能包含标题、移除参数与片段的 URL、授权站点的可见文本摘录。管理页可预览元数据样例。模型网关的路由决定实际处理方。私有 IP、常见内网域名、疑似凭据链接及非网页协议仅在本地搜索。启发式过滤无法识别所有机构内部域名；可用文件夹范围限定模型处理的数据。API 密钥存放于当前扩展的 `chrome.storage.local`，没有内置公用密钥。
+- Open **Manage Index** to configure your Chat Completions-compatible gateway **API Base URL** (including `/v1`), **Model Name**, and optional **API Key**, then save and test the connection.
+- New installs select no folders by default; upgrades preserve your folder selections. Check parent folders to include subfolders, then click **Start Indexing** (click again to pause).
+- Starting indexing requests optional HTTP/HTTPS site permissions so the extension can fetch public page text excerpts on demand—without credentials, without executing page scripts, and without following redirects. If a page cannot be read or lacks site permission, the extension falls back to title and URL metadata.
+- Browse and filter generated summaries in **Generated LLM Indexes**. Clearing a folder or clearing all indexes pauses indexing while keeping your Chrome bookmarks, basic search, and personal notes intact.
 
-## 下一版计划（0.1.1）
+## Data Scope & Privacy
 
-等 Chrome 网上应用店给出 0.1.0 的审核结果后再开始。若审核要求修改，先处理反馈并完成首版上架。
+Each Chrome profile keeps its own local index, personal notes, and optional API key in extension storage (`chrome.storage.local` and IndexedDB). The extension never modifies Chrome bookmarks and includes no developer-hosted bookmark server, ads, or analytics.
 
-- **发布中英双语版。** 在同一个扩展和商店条目中增加英文，保留简体中文。覆盖搜索弹窗、索引管理、提示和错误信息，让新生成的 AI 摘要跟随界面语言。补充英文商店名称、简介、详情、截图和英文 README，并在中英文 Chrome 环境中分别验证本地搜索和 AI 搜索。
-- **以 [GitHub](https://github.com/smartian1/ai-chrome-bookmarks) 为主仓库，保留 Gitee 镜像。** 将开发和发布的默认推送目标切到 GitHub。同步更新商店后台的首页、支持页面和隐私政策网址，以及仓库文档中的反馈链接。提交 0.1.1 前，验证这些链接无需登录即可访问。
+Indexing requests may include the bookmark title, a cleaned URL (query parameters and fragments stripped), and up to 2,400 characters of visible text excerpt from authorized sites. Private IPs, common intranet domains, credential-like URLs, and non-web protocols stay strictly local. See [PRIVACY.md](PRIVACY.md) for full details.
 
-## 验证
+## Verification
 
-运行 `npx playwright install chromium` 后运行 `npm test`。测试构建扩展并启用独立 Chromium 临时配置，创建测试书签、用模拟网关生成用途和查询扩展、读取授权网页、保存备注，并检查重命名与删除同步。测试使用本机 HTTP 服务，无需真实 API 密钥。
+Install Chromium for Playwright once (`npx playwright install chromium`), then run:
+
+```bash
+npm test
+```
+
+The test suite builds the extension, validates relevance/time-filter logic, and runs end-to-end Playwright checks in both **Simplified Chinese (`zh-CN`)** and **English (`en-US`)** Chrome environments against a local mock HTTP server—no real API key required.

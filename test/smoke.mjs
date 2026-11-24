@@ -7,6 +7,7 @@ import { chromium } from 'playwright';
 import { build } from 'esbuild';
 
 const requests=[];
+const systems=[];
 async function waitForRows(page,predicate){
   const end=Date.now()+15000;
   let rows=[];
@@ -24,7 +25,10 @@ const server=createServer(async(req,res)=>{
   }
   let raw='';for await(const chunk of req)raw+=chunk;
   const messages=JSON.parse(raw).messages;
-  const data=JSON.parse(messages.at(-1).content);requests.push(data);
+  const sys=messages[0]?.content??'';
+  const data=JSON.parse(messages.at(-1).content);
+  requests.push(data);
+  systems.push(sys);
   if(data.items?.every(item=>item.title.startsWith('Reference '))){
     res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({choices:[{message:{content:'invalid JSON'}}]}));return;
   }
@@ -32,7 +36,12 @@ const server=createServer(async(req,res)=>{
     res.writeHead(503).end();return;
   }
   if(data.title==='Fixture site')await new Promise(resolve=>setTimeout(resolve,1800));
-  const answer=data.items?{items:data.items.slice(1).reverse().map(item=>({id:item.id,summary:item.title,tags:[]}))}:data.query?{terms:['tabular'],folder:''}:data.test?{ok:true}:{summary:'提取 PDF 中的表格',tags:['tabular','PDF extraction']};
+  const english=sys.includes('one-line English description');
+  const answer=data.items?{items:data.items.slice(1).reverse().map(item=>({id:item.id,summary:item.title,tags:[]}))}
+    :data.query?{terms:['tabular'],folder:''}
+    :data.test?{ok:true}
+    :english?{summary:'Extract tables from PDF documents',tags:['tabular','PDF extraction']}
+    :{summary:'提取 PDF 中的表格',tags:['tabular','PDF extraction']};
   res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({choices:[{message:{content:JSON.stringify(answer)}}]}));
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -48,7 +57,8 @@ delete manifest.optional_host_permissions;
 await writeFile(manifestPath,JSON.stringify(manifest));
 let ctx;
 try{
-  ctx=await chromium.launchPersistentContext('',{channel:'chromium',headless:true,args:[`--disable-extensions-except=${dist}`,`--load-extension=${dist}`,'--no-proxy-server',`--host-resolver-rules=MAP fixture.example.org 127.0.0.1:${server.address().port}, MAP example.org 127.0.0.1:${server.address().port}`]});
+  // Pass 1: Simplified Chinese Chrome environment
+  ctx=await chromium.launchPersistentContext('',{channel:'chromium',headless:true,args:['--lang=zh-CN',`--disable-extensions-except=${dist}`,`--load-extension=${dist}`,'--no-proxy-server',`--host-resolver-rules=MAP fixture.example.org 127.0.0.1:${server.address().port}, MAP example.org 127.0.0.1:${server.address().port}`]});
   const worker=ctx.serviceWorkers()[0]??await ctx.waitForEvent('serviceworker');
   const extension='chrome-extension://'+new URL(worker.url()).hostname;
   const settings=await ctx.newPage();await settings.goto(extension+'/settings.html');
@@ -79,6 +89,7 @@ try{
   await settings.getByRole('button',{name:'开始建库'}).click();
   await settings.waitForFunction(()=>document.querySelector('#stats').textContent.includes('已生成摘要 1'));
   assert.ok(requests.some(payload=>payload.url==='http://example.org/tool'));
+  assert.ok(systems.some(s=>s.includes('一行中文说明')));
   assert.ok(!JSON.stringify(requests).includes('private-test'));
   await waitForRows(settings,rows=>rows.some(r=>r.title==='Project orchard'&&r.info?.status==='done'&&r.info.source==='模型推断'&&r.info.note));
   await settings.waitForFunction(async()=>!(await chrome.storage.local.get('running')).running);
@@ -99,6 +110,7 @@ try{
   assert.ok(requests.some(r=>r.excerpt?.includes('Compare documents')),JSON.stringify(requests.map(r=>r.excerpt)));
   assert.ok(!JSON.stringify(requests).includes('IGNORE_THIS_SCRIPT'));
   const search=await ctx.newPage();await search.goto(extension+'/search.html');
+  assert.equal(await search.locator('h1').textContent(),'AI书签寻迹');
   const box=search.locator('#query');await box.fill('水果研究设备');await box.press('Enter');
   await search.locator('#status').filter({hasText:'AI对话搜索'}).waitFor();
   assert.equal(await search.getByRole('button',{name:'AI对话搜索',exact:true}).getAttribute('title'),'使用大模型对话搜索');
@@ -170,15 +182,54 @@ try{
   assert.equal(requests.at(-1).url,batchPayload.items[0].url);
   assert.equal(await worker.evaluate(async()=>(await chrome.storage.local.get('used')).used),usedBefore+2);
   console.log('PASS: four pages in one request, out-of-order results, isolated missing entry and single-page retry');
-  assert.deepEqual(errors,[]);console.log('PASS: import, privacy, authorized page excerpt, enrichment, semantic query, note, rename, folder propagation and deletion');
+  assert.deepEqual(errors,[]);console.log('PASS: zh-CN import, privacy, authorized page excerpt, enrichment, semantic query, note, rename, folder propagation and deletion');
   await ctx.close();ctx=undefined;
+
+  // Pass 2: English Chrome environment (local search + AI indexing + AI search + English prompt)
+  const enSystemsBefore=systems.length;
+  ctx=await chromium.launchPersistentContext('',{channel:'chromium',headless:true,args:['--lang=en-US',`--disable-extensions-except=${dist}`,`--load-extension=${dist}`,'--no-proxy-server',`--host-resolver-rules=MAP fixture.example.org 127.0.0.1:${server.address().port}, MAP example.org 127.0.0.1:${server.address().port}`]});
+  const enWorker=ctx.serviceWorkers()[0]??await ctx.waitForEvent('serviceworker');
+  const enExt='chrome-extension://'+new URL(enWorker.url()).hostname;
+  const enSettings=await ctx.newPage();await enSettings.goto(enExt+'/settings.html');
+  const enErrors=[];enSettings.on('pageerror',err=>enErrors.push(err.message));
+  assert.equal(await enSettings.title(),'AI Bookmark Trails · Manage Index');
+  await enWorker.evaluate(async()=>{
+    const folder=await chrome.bookmarks.create({title:'Work Tools'});
+    await chrome.bookmarks.create({parentId:folder.id,title:'Table Utility',url:'http://fixture.example.org/pdf-tables'});
+  });
+  await enSettings.getByRole('button',{name:'Sync Bookmarks'}).click();
+  await enSettings.locator('[data-folder="0"] input').check();
+  await enSettings.locator('#selectedCount').filter({hasText:'1 bookmarks selected'}).waitFor();
+  await enSettings.locator('#base').fill(base+'/v1');await enSettings.locator('#model').fill('fixture');
+  await enSettings.getByRole('button',{name:'Save Settings'}).click();
+  await enSettings.getByText('Settings saved',{exact:true}).waitFor();
+  await enSettings.getByRole('button',{name:'Test Saved Config'}).click();
+  await enSettings.getByText('Model connection succeeded').waitFor();
+  await enSettings.getByRole('button',{name:'Start Indexing'}).click();
+  await waitForRows(enSettings,rows=>rows.some(r=>r.title==='Table Utility'&&r.info?.status==='done'&&r.info.source==='Page excerpt'&&r.info.summary==='Extract tables from PDF documents'));
+  assert.ok(systems.slice(enSystemsBefore).some(s=>s.includes('one-line English description')));
+  await enSettings.locator('#indexes').getByText('Keywords · tabular, PDF extraction').waitFor();
+  const enSearch=await ctx.newPage();await enSearch.goto(enExt+'/search.html');
+  assert.equal(await enSearch.locator('h1').textContent(),'AI Bookmark Trails');
+  const enBox=enSearch.locator('#query');
+  await enBox.fill('Table Utility');
+  await enSearch.getByRole('button',{name:'Table Utility'}).waitFor();
+  await enBox.fill('tool for extracting tables from reports');await enBox.press('Enter');
+  await enSearch.locator('#status').filter({hasText:'AI Search'}).waitFor();
+  await enSearch.getByRole('button',{name:'Table Utility'}).waitFor();
+  await enSearch.getByText('Page excerpt · Extract tables from PDF documents').waitFor();
+  assert.deepEqual(enErrors,[]);
+  console.log('PASS: en-US UI, English summary prompt, local search and AI search');
+  await ctx.close();ctx=undefined;
+
+  // Pass 3: Large profile scale & v1 DB migration
   const profile=await mkdtemp(resolve(tmpdir(),'bookmark-scale-test-'));
   try{
     const root=(id,name,children=[])=>({id:String(id),name,type:'folder',children,date_added:'0',date_modified:'0'});
     const marks=Array.from({length:2881},(_,index)=>({id:String(index+4),name:`Reference ${index}`,url:`https://example.org/reference/${index}`,type:'url',date_added:'0'}));
     await mkdir(resolve(profile,'Default'));
     await writeFile(resolve(profile,'Default','Bookmarks'),JSON.stringify({version:1,roots:{bookmark_bar:root(1,'Bookmarks bar',[root(4000,'Historical batch',marks.slice(0,5)),...marks.slice(5)]),other:root(2,'Other bookmarks'),synced:root(3,'Mobile bookmarks')}}));
-    ctx=await chromium.launchPersistentContext(profile,{channel:'chromium',headless:true,args:[`--disable-extensions-except=${dist}`,`--load-extension=${dist}`]});
+    ctx=await chromium.launchPersistentContext(profile,{channel:'chromium',headless:true,args:['--lang=zh-CN',`--disable-extensions-except=${dist}`,`--load-extension=${dist}`]});
     const browserWorker=ctx.serviceWorkers()[0]??await ctx.waitForEvent('serviceworker');
     const large=await ctx.newPage();await large.goto(new URL('search.html',browserWorker.url()).href);
     await large.locator('#status').filter({hasText:'2881'}).waitFor();

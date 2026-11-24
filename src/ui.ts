@@ -1,5 +1,6 @@
 import {config,indexBytes} from './db';
 import {included,search,type Folder,type Rules,type Row} from './core';
+import {applyDocumentI18n,formatSource,listSeparator,t,uiLocale} from './i18n';
 import {endpoint} from './model';
 function el<T extends HTMLElement=HTMLElement>(id:string){return document.getElementById(id) as T;}
 const input=(id:string)=>el<HTMLInputElement>(id);
@@ -28,40 +29,40 @@ async function searchPage(){
   }
   let results:Row[]=[],selected=-1,sequence=0;
   async function open(row:Row){
-    if(!/^(https?|ftp|file):/i.test(row.url)){status.textContent='此链接类型请在 Chrome 书签管理器中打开';return;}
+    if(!/^(https?|ftp|file):/i.test(row.url)){status.textContent=t('errOpenUnsupportedUrl');return;}
     await chrome.tabs.create({url:row.url});
   }
   function render(terms:string[]=[],folder='',concepts:string[][]=[]){
     selected=-1;list.replaceChildren();results=search(data,box.value,terms,folder,concepts);
-    const resultLabel=results.length?`显示 ${results.length} 条`:(data.length?'没有匹配的书签':'当前 Chrome 配置还没有书签');
-    status.textContent=`${resultLabel} · 本地索引 ${data.length} 条 · 大模型索引 ${modelCount} 条`;
-    if(smartResult)status.textContent+=' · AI对话搜索';
+    const resultLabel=results.length?t('statusShowingCount',[results.length]):(data.length?t('statusNoMatches'):t('statusNoBookmarks'));
+    status.textContent=t('statusSummaryBar',[resultLabel,data.length,modelCount]);
+    if(smartResult)status.textContent+=t('statusAiModeSuffix');
     for(const row of results){
       const card=label('article','','card'), head=label('div','','cardhead');
-      const link=label('button',row.title||row.host||'未命名书签','open'),edit=label('button','备注','edit');
+      const link=label('button',row.title||row.host||t('untitledBookmark'),'open'),edit=label('button',t('noteBtn'),'edit');
       link.onclick=()=>void open(row).catch(e=>status.textContent=message(e));
       edit.onclick=()=>{
-        const area=document.createElement('textarea'),save=label('button','保存备注');
-        area.value=row.note??'';area.maxLength=1000;area.ariaLabel='我的用途备注';
+        const area=document.createElement('textarea'),save=label('button',t('saveNoteBtn'));
+        area.value=row.note??'';area.maxLength=1000;area.ariaLabel=t('noteAreaAria');
         save.onclick=async()=>{await send('note',{id:row.id,text:area.value});area.remove();await reload();};
         card.append(area,save);edit.hidden=true;area.focus();
       };
       head.append(link,edit);card.append(head,label('div',[row.host,row.folder].filter(Boolean).join(' · '),'small'));
-      if(row.note)card.append(label('div','我的备注 · '+row.note));
-      if(row.info?.summary)card.append(label('div',row.info.source+' · '+row.info.summary));
-      if(row.info?.evidence)card.append(label('div','摘录 · '+row.info.evidence.slice(0,110),'small'));
+      if(row.note)card.append(label('div',t('myNotePrefix',[row.note])));
+      if(row.info?.summary)card.append(label('div',formatSource(row.info.source)+' · '+row.info.summary));
+      if(row.info?.evidence)card.append(label('div',t('excerptPrefix',[row.info.evidence.slice(0,110)]),'small'));
       list.append(card);
     }
   }
   async function smart(){
     const query=box.value.trim();if(!query)return;
-    const ticket=++sequence;status.textContent='正在理解查询…';
+    const ticket=++sequence;status.textContent=t('statusUnderstanding');
     try{
       const {terms,folder,concepts}=await send<{terms:string[];folder:string;concepts:string[][]}>('query',{query});
       if(ticket!==sequence)return;
       const known=folder && data.some(r=>r.folder.toLowerCase().split(' / ').includes(folder.toLowerCase()));
       smartResult={terms,folder:known?folder:'',concepts};render(terms,smartResult.folder,concepts);
-    }catch(e){if(ticket===sequence){smartResult=undefined;render();status.textContent+=' · AI对话搜索不可用，已显示本地结果 · '+message(e);}}
+    }catch(e){if(ticket===sequence){smartResult=undefined;render();status.textContent+=t('statusAiUnavailable',[message(e)]);}}
   }
   box.oninput=()=>{sequence++;smartResult=undefined;render();};
   el('search').onsubmit=e=>{e.preventDefault();void smart();};
@@ -84,7 +85,7 @@ async function settingsPage(){
   let running=false,busy=false;
   function toggleState(){
     const button=el<HTMLButtonElement>('start');
-    button.textContent=running?'暂停建库':'开始建库';
+    button.textContent=running?t('pauseIndexBtn'):t('startIndexBtn');
     button.disabled=busy||(!running&&!data.some(row=>row.safe&&included(row.ancestors??[],rules)));
   }
   function showFolders(){
@@ -110,7 +111,7 @@ async function settingsPage(){
       const branch=document.createElement('button');
       branch.className=parents.has(folder.id)?'branch':'branch leaf';
       branch.textContent=closed.has(folder.id)&&!query?'▸':'▾';
-      branch.ariaLabel=`展开或折叠 ${folder.title}`;branch.disabled=Boolean(query)||!parents.has(folder.id);
+      branch.ariaLabel=t('toggleFolderAria',[folder.title]);branch.disabled=Boolean(query)||!parents.has(folder.id);
       branch.setAttribute('aria-expanded',String(Boolean(query)||!closed.has(folder.id)));
       branch.onclick=()=>{if(closed.has(folder.id))closed.delete(folder.id);else closed.add(folder.id);showFolders();};
       const title=document.createElement('label'),check=document.createElement('input');
@@ -118,26 +119,28 @@ async function settingsPage(){
       check.onchange=async()=>{try{await send('scope',{id:folder.id,enabled:check.checked});await refresh();}catch(e){notice(message(e));showFolders();}};
       title.append(check,document.createTextNode(folder.title));title.title=folder.path;
       const c=counts.get(folder.id)!;
-      const state=working?.ancestors.includes(folder.id)?'索引中':c.done===0?'未索引':c.done===c.eligible?'已建索引':'部分已建';
+      const state=working?.ancestors.includes(folder.id)?t('folderStateIndexing'):c.done===0?t('folderStateNone'):c.done===c.eligible?t('folderStateDone'):t('folderStatePartial');
       const explicit=folder.ancestors.some(id=>Object.hasOwn(rules,id));
-      const status=label('span',`${check.checked||check.indeterminate?'':explicit?'已排除 · ':'未选手动建库 · '}${state} ${c.done}/${c.eligible}`,'small');
-      const remove=document.createElement('button');remove.textContent='清理';remove.ariaLabel=`清理 ${folder.title} 的 LLM 索引`;remove.disabled=!c.records&&!working?.ancestors.includes(folder.id);
+      const prefix=check.checked||check.indeterminate?'':explicit?t('folderExcludedPrefix'):t('folderUnselectedPrefix');
+      const status=label('span',`${prefix}${state} ${c.done}/${c.eligible}`,'small');
+      const remove=document.createElement('button');remove.textContent=t('clearFolderBtn');remove.ariaLabel=t('clearFolderAria',[folder.title]);remove.disabled=!c.records&&!working?.ancestors.includes(folder.id);
       remove.onclick=()=>void clearIndexes(folder).catch(e=>notice(message(e)));
       row.append(branch,title,status,remove);elements.push(row);
     }
-    el('folderTree').replaceChildren(...(elements.length?elements:[label('p','没有匹配的目录')]));
+    el('folderTree').replaceChildren(...(elements.length?elements:[label('p',t('noMatchingFolders'))]));
   }
   async function clearIndexes(folder?:Folder){
-    if(!window.confirm(`清理${folder?`「${folder.path||folder.title}」及子目录`:'全部目录'}的 LLM 索引？建库会暂停，书签和备注会保留。`))return;
-    await send(folder?'clearFolder':'clearAll',{id:folder?.id});await refresh();notice('LLM 索引已清理，建库已暂停');
+    const promptText=folder?t('confirmClearFolder',[folder.path||folder.title]):t('confirmClearAll');
+    if(!window.confirm(promptText))return;
+    await send(folder?'clearFolder':'clearAll',{id:folder?.id});await refresh();notice(t('noticeCleared'));
   }
   el('clearAll').onclick=()=>void clearIndexes().catch(e=>notice(message(e)));
   input('folderQuery').oninput=showFolders;
   async function progress(){
     const item=await send<typeof working>('progress'),previous=working?.id;
     working=item;
-    const idleText=running?'建库进行中，正在等待下一批':'当前没有正在处理的页面';
-    el('current').textContent=item?`正在索引 ${item.count} 个页面：${item.title}${item.url?' · '+item.url:''}`:idleText;
+    const idleText=running?t('currentWaiting'):t('currentIdle');
+    el('current').textContent=item?t('currentProcessing',[item.count,`${item.title}${item.url?' · '+item.url:''}`]):idleText;
     if(previous!==item?.id)showFolders();
   }
   let indexPage=0,canStart=false;
@@ -151,15 +154,15 @@ async function settingsPage(){
     const items=[...unique.values()].sort((a,b)=>b.info!.at-a.info!.at);
     const pageSize=20, pages=Math.ceil(items.length/pageSize);
     indexPage=Math.min(indexPage,Math.max(0,pages-1));
-    el('indexCount').textContent=pages?`${items.length} 条索引 · 第 ${indexPage+1} / ${pages} 页`:query?'未找到匹配的索引':'模型完成第一条用途说明后，会显示在这里。';
+    el('indexCount').textContent=pages?t('indexPageInfo',[items.length,indexPage+1,pages]):query?t('indexNoMatch'):t('indexEmpty');
     el<HTMLButtonElement>('previous').disabled=indexPage===0;
     el<HTMLButtonElement>('next').disabled=indexPage+1>=pages;
     el('indexes').replaceChildren(...items.slice(indexPage*pageSize,(indexPage+1)*pageSize).map(row=>{
       const info=row.info!,card=label('article','','card');
       card.append(label('strong',row.title||row.host),label('div',row.safe,'small'),label('p',info.summary));
-      if(info.tags.length)card.append(label('div','关键词 · '+info.tags.join('、')));
+      if(info.tags.length)card.append(label('div',t('keywordsPrefix',[info.tags.join(listSeparator())])));
       if(info.evidence)card.append(label('blockquote',info.evidence));
-      card.append(label('div',[info.source,new Date(info.at).toLocaleString()].join(' · '),'small'));return card;
+      card.append(label('div',[formatSource(info.source),new Date(info.at).toLocaleString(uiLocale())].join(' · '),'small'));return card;
     }));
   }
   input('indexQuery').oninput=()=>{indexPage=0;showIndexes();};
@@ -178,38 +181,38 @@ async function settingsPage(){
     running=c.running;toggleState();
     canStart=Boolean(c.base&&c.model);
     const scope=data.filter(r=>included(r.ancestors??[],rules)), done=scope.filter(r=>r.info?.status==='done').length;
-    el('selectedCount').textContent=`已选中 ${scope.length} 个书签`;
+    el('selectedCount').textContent=t('selectedCount',[scope.length]);
     const errors=scope.filter(r=>r.info?.status==='error'),held=scope.filter(r=>!r.safe||r.info?.status==='skipped');
-    el('stats').replaceChildren(label('strong',`当前选中 ${scope.length} 条书签（本地共 ${data.length} 条）`),document.createElement('br'),
-      label('span',`已生成摘要 ${done} · 待处理 ${scope.length-done-held.length-errors.length} · 已跳过 ${held.length} · 失败 ${errors.length}`));
-    el('recent').replaceChildren(label('strong',`${c.running?'手动建库已启用':'手动建库未运行'} · 历史建库尝试 ${c.used} 次`),document.createElement('br'),
-      label('span','每次模型建库请求可处理 1 至 4 个页面，整批计 1 次，含失败和重试。复用已有摘要或直接跳过书签不会增加次数。','small'));
+    el('stats').replaceChildren(label('strong',t('statsHeadline',[scope.length,data.length])),document.createElement('br'),
+      label('span',t('statsDetail',[done,scope.length-done-held.length-errors.length,held.length,errors.length])));
+    el('recent').replaceChildren(label('strong',t('recentHeadline',[c.running?t('recentRunning'):t('recentIdle'),c.used])),document.createElement('br'),
+      label('span',t('recentNote'),'small'));
     const size=bytes>=1048576?`${(bytes/1048576).toFixed(2)} MiB`:bytes>=1024?`${(bytes/1024).toFixed(1)} KiB`:`${bytes} B`;
-    el('size').textContent=`LLM 索引数据量约 ${size}（索引记录及书签关联的序列化大小）`;
+    el('size').textContent=t('sizeEstimate',[size]);
     showFolders();
     const sample=scope.find(r=>r.safe&&!r.info)??scope.find(r=>r.safe);
-    el('preview').textContent=sample?JSON.stringify({title:sample.title.slice(0,240),url:sample.safe.slice(0,700),excerpt:''},null,2):'暂无适合的书签';
+    el('preview').textContent=sample?JSON.stringify({title:sample.title.slice(0,240),url:sample.safe.slice(0,700),excerpt:''},null,2):t('previewEmpty');
     showIndexes();
   }
   el('config').onsubmit=e=>{
     e.preventDefault();
     const save=async()=>{
       const base=input('base').value.trim(),model=input('model').value.trim();
-      if(!model)throw Error('请填写模型名称');
+      if(!model)throw Error(t('errModelNameRequired'));
       const host=new URL(endpoint(base)).origin+'/*';
-      if(!await chrome.permissions.request({origins:[host]}))throw Error('模型网关未获授权');
-      await chrome.storage.local.set({base,model,token:input('token').value});notice('设置已保存');await refresh();
+      if(!await chrome.permissions.request({origins:[host]}))throw Error(t('errGatewayDenied'));
+      await chrome.storage.local.set({base,model,token:input('token').value});notice(t('noticeSettingsSaved'));await refresh();
     };
     void save().catch(err=>notice(message(err)));
   };
   type SyncReport={added:number;updated:number;removed:number;total:number;at:number};
-  const syncTime=new Intl.DateTimeFormat('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const syncTime=new Intl.DateTimeFormat(uiLocale(),{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
   let latestCheck=0;
   function showSync(result:SyncReport,reason:string){
     if(result.at<latestCheck)return;
     latestCheck=result.at;
-    const detail=result.added||result.updated||result.removed?'已同步变动':'已是最新';
-    el('syncResult').textContent=`本地可搜索 ${result.total} 条 · ${syncTime.format(result.at)} ${reason}，${detail}`;
+    const detail=result.added||result.updated||result.removed?t('syncDetailUpdated'):t('syncDetailUpToDate');
+    el('syncResult').textContent=t('syncResultLine',[result.total,syncTime.format(result.at),reason,detail]);
   }
   async function syncBookmarks(reason:string){
     showSync(await send<SyncReport>('sync'),reason);
@@ -217,31 +220,32 @@ async function settingsPage(){
   async function showUpdate(){
     const {bookmarkUpdate:update}=await chrome.storage.session.get<{bookmarkUpdate?:SyncReport&{title:string}}>('bookmarkUpdate');
     if(update){
-      showSync(update,'书签变动');
-      el('lastChange').textContent=`最近一次有变动 · ${syncTime.format(update.at)} · 新增 ${update.added} · 更新 ${update.updated} · 移除 ${update.removed}${update.title?' · '+update.title:''}`;
+      showSync(update,t('syncReasonBookmarkChange'));
+      el('lastChange').textContent=t('lastChangeLine',[syncTime.format(update.at),update.added,update.updated,update.removed])+(update.title?' · '+update.title:'');
     }
   }
   chrome.storage.onChanged.addListener((changes,area)=>{if(area==='session'&&changes.bookmarkUpdate)void showUpdate();});
   await showUpdate();
-  action('sync',async()=>{await syncBookmarks('手动核对');await refresh();});
-  action('test',async()=>{notice('正在测试…');await send('test');notice('模型连接成功');});
+  action('sync',async()=>{await syncBookmarks(t('syncReasonManual'));await refresh();});
+  action('test',async()=>{notice(t('noticeTesting'));await send('test');notice(t('noticeTestOk'));});
   action('start',async()=>{
     busy=true;toggleState();
     try{
-      if(running){await send('pause');notice('已暂停，当前请求完成后停止');}
+      if(running){await send('pause');notice(t('noticePaused'));}
       else{
         const granted=canStart && await chrome.permissions.request({origins:['http://*/*','https://*/*']});
-        await send('start');notice(granted?'已开始处理所选书签':'已开始处理，仅已授权站点可附带网页摘录');
+        await send('start');notice(granted?t('noticeStarted'):t('noticeStartedLimited'));
       }
       await refresh();
     }finally{busy=false;toggleState();}
   });
   chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes.running){running=Boolean(changes.running.newValue);toggleState();}});
-  await syncBookmarks('打开管理页核对');await refresh(true);await progress();
+  await syncBookmarks(t('syncReasonOpen'));await refresh(true);await progress();
   chrome.storage.onChanged.addListener((changes,area)=>{
     if(area==='session'&&changes.indexRevision&&!document.hidden)void refresh().catch(e=>notice(message(e)));
   });
   setInterval(()=>{if(!document.hidden)void progress().catch(e=>notice(message(e)));},600);
   setInterval(()=>{if(!document.hidden && document.activeElement?.tagName!=='SELECT')void refresh();},5000);
 }
+applyDocumentI18n();
 (document.body.classList.contains('popup')?searchPage():settingsPage()).catch(e=>{(document.querySelector('#status,#notice') as HTMLElement).textContent=message(e);});
